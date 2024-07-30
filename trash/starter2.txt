@@ -1,0 +1,126 @@
+package main
+
+import (
+	"bufio"
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+	"strings"
+	"sync"
+
+	"golang.org/x/exp/mmap"
+)
+
+type Station struct {
+	measurements []float64
+}
+
+type ChunkReader struct {
+	data []byte
+	pos  int
+}
+
+func NewChunkReader(data []byte) *ChunkReader {
+	return &ChunkReader{data: data}
+}
+
+func (r *ChunkReader) Read(p []byte) (int, error) {
+	if r.pos >= len(r.data) {
+		return 0, io.EOF
+	}
+	n := copy(p, r.data[r.pos:])
+	r.pos += n
+	return n, nil
+}
+
+func processLine(line string) (string, float64) {
+	parts := strings.Split(line, ";")
+	station := parts[0]
+	measurement, _ := strconv.ParseFloat(parts[1], 64)
+
+	return station, measurement
+}
+
+func calculateMean(measurements []float64) float64 {
+	sum := 0.0
+	for _, m := range measurements {
+		sum += m
+	}
+	return sum / float64(len(measurements))
+}
+
+func calculateMin(measurements []float64) float64 {
+	min := measurements[0]
+	for _, m := range measurements[1:] {
+		if m < min {
+			min = m
+		}
+	}
+	return min
+}
+
+func calculateMax(measurements []float64) float64 {
+	max := measurements[0]
+	for _, m := range measurements[1:] {
+		if m > max {
+			max = m
+		}
+	}
+	return max
+}
+
+func main() {
+	stations := make(map[string]*Station)
+
+	filePath := "large_dataset.txt"
+	chunkSize := 64 * 1024 * 1024
+
+	reader, _ := mmap.Open(filePath)
+	defer reader.Close()
+
+	fileInfo, _ := os.Stat(filePath)
+	fileSize := fileInfo.Size()
+	fmt.Printf("File size: %d bytes\n", fileSize)
+
+	var wg sync.WaitGroup
+	for offset := int64(0); offset < fileSize; {
+		remainingSize := fileSize - offset
+		currentChunkSize := int64(chunkSize)
+		if remainingSize < currentChunkSize {
+			currentChunkSize = remainingSize
+		}
+
+		largeChunk := make([]byte, currentChunkSize+1024)
+		n, _ := reader.ReadAt(largeChunk, offset)
+		actualChunkSize := int64(n)
+		if idx := strings.LastIndexByte(string(largeChunk[:n]), '\n'); idx >= 0 {
+			actualChunkSize = int64(idx + 1)
+		}
+
+		chunk := largeChunk[:actualChunkSize]
+		offset += actualChunkSize
+
+		wg.Add(1)
+		scanner := bufio.NewScanner(NewChunkReader(chunk))
+		lineNumber := 1
+		for scanner.Scan() {
+			station, measurement := processLine(scanner.Text())
+			if _, ok := stations[station]; !ok {
+				stations[station] = &Station{}
+			}
+			stations[station].measurements = append(stations[station].measurements, measurement)
+			lineNumber++
+		}
+	}
+
+	wg.Wait()
+
+	fmt.Println("Number of Stations:", len(stations))
+	for station, data := range stations {
+		mean := calculateMean(data.measurements)
+		min := calculateMin(data.measurements)
+		max := calculateMax(data.measurements)
+		fmt.Printf("Station: %s, Mean: %.2f, Min: %.2f, Max: %.2f\n", station, mean, min, max)
+	}
+}

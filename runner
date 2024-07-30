@@ -1,0 +1,4 @@
+#! /bin/bash
+
+go build -o main -ldflags="-s -w" -gcflags="-m -l -B" main.go
+time ./main

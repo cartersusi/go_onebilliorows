@@ -5,22 +5,23 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/exp/mmap"
 )
 
 type Station struct {
-	total float64
-	count int
-	min   float64
-	max   float64
+	total float32
+	count uint16
+	min   float32
+	max   float32
 }
-type StationMap map[string]Station
+type fixed_string [37]byte
+type StationMap map[fixed_string]Station
 
 type ChunkReader struct {
 	data []byte
@@ -41,18 +42,25 @@ func (r *ChunkReader) Read(p []byte) (int, error) {
 }
 
 func processLine(line string, stations StationMap) {
-	parts := strings.Split(line, ";")
+	var station fixed_string
+	var measurement float32
+	for i := len(line) - 1; i >= 0; i-- {
+		if line[i] == ';' {
+			copy(station[:i], line[:i])
+			tmp, _ := strconv.ParseFloat(line[i+1:], 32)
+			measurement = float32(tmp)
+			break
+		}
+	}
 
-	station := parts[0]
-	measurement, _ := strconv.ParseFloat(parts[1], 64)
 	s, ok := stations[station]
 	if !ok {
 		s = Station{}
 	}
 	s.total += measurement
 	s.count++
-	s.min = math.Min(s.min, measurement)
-	s.max = math.Max(s.max, measurement)
+	s.min = min(s.min, measurement)
+	s.max = max(s.max, measurement)
 	stations[station] = s
 }
 
@@ -118,8 +126,8 @@ func readLargeFile(filePath string, chunkSize int) (StationMap, error) {
 			}
 			s.total += mes.total
 			s.count += mes.count
-			s.min = math.Min(s.min, mes.min)
-			s.max = math.Max(s.max, mes.max)
+			s.min = float32(min(s.min, mes.min))
+			s.max = float32(max(s.max, mes.max))
 			stations[station] = s
 		}
 	}
@@ -127,14 +135,31 @@ func readLargeFile(filePath string, chunkSize int) (StationMap, error) {
 	return stations, nil
 }
 
+func min(a, b float32) float32 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func max(a, b float32) float32 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 func main() {
-	fp := "large_dataset.txt"
-	chunkSize := 64 * 1024 * 1024
+	start_time := time.Now()
+	fp := "data/measurements.txt"
+	chunkSize := (64 * 1024 * 1024)
 
 	stations, err := readLargeFile(fp, chunkSize)
 	if err != nil {
 		log.Fatalf("Error reading file: %v", err)
 	}
+
+	fmt.Println("Time taken: ", time.Since(start_time))
 
 	f, err := os.Create("output.txt")
 	if err != nil {
@@ -144,7 +169,7 @@ func main() {
 
 	f.WriteString("Station,Mean,Min,Max\n")
 	for station, s := range stations {
-		_, err := f.WriteString(fmt.Sprintf("%s,%f,%f,%f\n", station, s.total/float64(s.count), s.min, s.max))
+		_, err := f.WriteString(fmt.Sprintf("%s,%f,%f,%f\n", strings.TrimRight(string(station[:]), "\x00"), s.total/float32(s.count), s.min, s.max))
 		if err != nil {
 			log.Fatalf("Error writing to file: %v", err)
 		}

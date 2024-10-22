@@ -1,7 +1,6 @@
 package main
 
 import (
-	//"bufio"
 	"fmt"
 	"io"
 	"log"
@@ -183,19 +182,11 @@ func main() {
 
 	fmt.Println("Time taken: ", time.Since(start_time))
 
-	f, err := os.Create("output.txt")
-	if err != nil {
-		log.Fatalf("Error creating file: %v", err)
-	}
-	defer f.Close()
+	var print_out []string
 
-	f.WriteString("Station,Mean,Min,Max\n")
 	for station, s := range stations {
-		_, err := f.WriteString(fmt.Sprintf("%s,%f,%f,%f\n", strings.TrimRight(string(station[:]), "\x00"), s.total/float32(s.count), s.min, s.max))
-		if err != nil {
-			log.Fatalf("Error writing to file: %v", err)
-		}
+		print_out = append(print_out, fmt.Sprintf("%s=%f/%f/%f", strings.TrimRight(string(station[:]), "\x00"), s.total/float32(s.count), s.min, s.max))
 	}
 
-	fmt.Println("Done")
+	fmt.Println(print_out)
 }

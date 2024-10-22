@@ -1,12 +1,11 @@
 package main
 
 import (
-	"bufio"
+	//"bufio"
 	"fmt"
 	"io"
 	"log"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,8 +19,9 @@ type Station struct {
 	min   float32
 	max   float32
 }
-type fixed_string [37]byte
-type StationMap map[fixed_string]Station
+type max_station [37]byte
+type max_line [43]byte
+type StationMap map[max_station]Station
 
 type ChunkReader struct {
 	data []byte
@@ -41,14 +41,27 @@ func (r *ChunkReader) Read(p []byte) (int, error) {
 	return n, nil
 }
 
-func processLine(line string, stations StationMap) {
-	var station fixed_string
+func parseFloatFromBytes(b []byte) float32 {
+	if b[0] == '-' {
+		if b[2] == '.' {
+			return -((float32(b[1] - '0')) + ((float32(b[3] - '0')) / 10))
+		}
+		return -((float32(b[1]-'0')*10 + float32(b[2]-'0')) + (float32(b[4]-'0') / 10))
+	} else {
+		if b[1] == '.' {
+			return (float32(b[0]-'0') + (float32(b[2]-'0') / 10))
+		}
+		return (float32(b[0]-'0')*10 + float32(b[1]-'0')) + (float32(b[3]-'0') / 10)
+	}
+}
+
+func processLine(line max_line, stations StationMap) {
+	var station max_station
 	var measurement float32
 	for i := len(line) - 1; i >= 0; i-- {
 		if line[i] == ';' {
-			copy(station[:i], line[:i])
-			tmp, _ := strconv.ParseFloat(line[i+1:], 32)
-			measurement = float32(tmp)
+			copy(station[:], line[:i])
+			measurement = parseFloatFromBytes(line[i+1:])
 			break
 		}
 	}
@@ -67,12 +80,21 @@ func processLine(line string, stations StationMap) {
 func processChunk(chunk []byte) StationMap {
 	stations := make(StationMap)
 
-	scanner := bufio.NewScanner(NewChunkReader(chunk))
-	lineNumber := 1
-	for scanner.Scan() {
-		processLine(scanner.Text(), stations)
-		lineNumber++
+	var fixed_line max_line
+	fixed_line_counter := 0
+	line_number := 1
+	for _, c := range chunk {
+		if c == '\n' {
+			line_number++
+			processLine(fixed_line, stations)
+			fixed_line = [43]byte{}
+			fixed_line_counter = 0
+		} else {
+			fixed_line[fixed_line_counter] = c
+			fixed_line_counter++
+		}
 	}
+
 	return stations
 }
 
